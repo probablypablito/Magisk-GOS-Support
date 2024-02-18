@@ -13,28 +13,12 @@
 
 using namespace std;
 
-void *self_handle = nullptr;
 string native_bridge = "0";
 
-extern "C" [[maybe_unused]] void zygisk_inject_entry(void *handle) {
-    self_handle = handle;
+static bool is_compatible_with(uint32_t) {
     zygisk_logging();
     hook_functions();
     ZLOGD("load success\n");
-}
-
-static bool is_compatible_with(uint32_t) {
-    auto name = get_prop(NBPROP);
-    android_dlextinfo info = {
-        .flags = ANDROID_DLEXT_FORCE_LOAD
-    };
-    void *handle = android_dlopen_ext(name.data(), RTLD_LAZY, &info);
-    if (handle) {
-        auto entry = reinterpret_cast<void (*)(void *)>(dlsym(handle, "zygisk_inject_entry"));
-        if (entry) {
-            entry(handle);
-        }
-    }
     return false;
 }
 
@@ -229,9 +213,11 @@ void zygisk_handler(int client, const sock_cred *cred) {
 void reset_zygisk(bool restore) {
     if (!zygisk_enabled) return;
     static atomic_uint zygote_start_count{1};
-    close(zygiskd_sockets[0]);
-    close(zygiskd_sockets[1]);
-    zygiskd_sockets[0] = zygiskd_sockets[1] = -1;
+    if (!restore) {
+        close(zygiskd_sockets[0]);
+        close(zygiskd_sockets[1]);
+        zygiskd_sockets[0] = zygiskd_sockets[1] = -1;
+    }
     if (restore) {
         zygote_start_count = 1;
     } else if (zygote_start_count.fetch_add(1) > 3) {
@@ -243,8 +229,8 @@ void reset_zygisk(bool restore) {
         if (native_bridge.length() > strlen(ZYGISKLDR)) {
             native_bridge_orig = native_bridge.substr(strlen(ZYGISKLDR));
         }
-        set_prop(NBPROP, native_bridge_orig.data(), true);
+        set_prop(NBPROP, native_bridge_orig.data());
     } else {
-        set_prop(NBPROP, native_bridge.data(), true);
+        set_prop(NBPROP, native_bridge.data());
     }
 }

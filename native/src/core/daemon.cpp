@@ -157,7 +157,6 @@ static void handle_request_async(int client, int code, const sock_cred &cred) {
         break;
     case +RequestCode::ZYGOTE_RESTART:
         LOGI("** zygote restarted\n");
-        pkg_xml_ino = 0;
         prune_su_access();
         reset_zygisk(false);
         close(client);
@@ -392,6 +391,13 @@ static void daemon_entry() {
     ssprintf(path, sizeof(path), "%s/" ROOTOVL, tmp);
     rm_rf(path);
 
+    // Unshare magiskd
+    xunshare(CLONE_NEWNS);
+    // Hide magisk internal mount point
+    xmount(nullptr, tmp, nullptr, MS_PRIVATE | MS_REC, nullptr);
+    // Fix sdcardfs bug on old kernel
+    xmount(nullptr, "/mnt", nullptr, MS_SLAVE | MS_REC, nullptr);
+
     // Use isolated devpts if kernel support
     if (access("/dev/pts/ptmx", F_OK) == 0) {
         ssprintf(path, sizeof(path), "%s/" SHELLPTS, tmp);
@@ -426,6 +432,7 @@ static void daemon_entry() {
     register_poll(&main_socket_pfd, handle_request);
 
     // Loop forever to listen for requests
+    init_thread_pool();
     poll_loop();
 }
 
